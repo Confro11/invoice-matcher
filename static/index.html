@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Matcher</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: #0d47a1;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 640px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .upload-box {
+    border: 2px dashed #90caf9;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    position: relative;
+  }
+  .upload-box:hover, .upload-box.drag-over {
+    border-color: #1976d2;
+    background: #e3f2fd;
+  }
+  .upload-box input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-box .icon { font-size: 2rem; margin-bottom: 8px; }
+  .upload-box h3 { font-size: 1rem; color: #1976d2; margin-bottom: 4px; }
+  .upload-box p { font-size: .8rem; color: #888; margin-bottom: 8px; }
+  .file-list { font-size: .8rem; color: #555; text-align: left; margin-top: 8px; }
+  .file-list div { padding: 2px 0; }
+  .file-list .fname { color: #1976d2; font-weight: 500; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 24px;
+    border: none; border-radius: 6px;
+    font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: background .2s, opacity .2s;
+  }
+  .btn-primary { background: #1976d2; color: #fff; }
+  .btn-primary:hover { background: #1565c0; }
+  .btn-primary:disabled { opacity: .5; cursor: default; }
+  .btn-success { background: #388e3c; color: #fff; }
+  .btn-success:hover { background: #2e7d32; }
+
+  .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+  /* Spinner */
+  .spinner {
+    display: none; width: 20px; height: 20px;
+    border: 3px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Error */
+  .error-box {
+    display: none;
+    background: #ffebee; border-left: 4px solid #f44336;
+    padding: 12px 16px; border-radius: 4px;
+    color: #b71c1c; font-size: .9rem; margin-top: 12px;
+  }
+
+  /* Stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    border-radius: 8px; padding: 14px 16px; text-align: center;
+  }
+  .stat-card.green { background: #e8f5e9; }
+  .stat-card.red { background: #ffebee; }
+  .stat-card.blue { background: #e3f2fd; }
+  .stat-card .num { font-size: 2rem; font-weight: 700; }
+  .stat-card.green .num { color: #2e7d32; }
+  .stat-card.red .num { color: #c62828; }
+  .stat-card.blue .num { color: #1565c0; }
+  .stat-card .label { font-size: .75rem; color: #555; margin-top: 2px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; margin-bottom: 16px; }
+  .tab {
+    padding: 10px 20px; font-weight: 600; font-size: .9rem;
+    cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: color .2s, border-color .2s;
+    color: #888;
+  }
+  .tab.active { color: #1976d2; border-bottom-color: #1976d2; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: .85rem;
+  }
+  thead th {
+    background: #fffde7; font-weight: 700;
+    padding: 10px 12px; text-align: left;
+    border-bottom: 2px solid #f9a825;
+    white-space: nowrap;
+  }
+  tbody tr:nth-child(even) { background: #fafafa; }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr.zaplaceno td { background: #f1f8e9 !important; }
+  tr.nezaplaceno td { background: #ffebee !important; }
+  tr.prirazena td { background: #f1f8e9 !important; }
+  tr.nepriraditelna td { background: #ffebee !important; }
+
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: .78rem; font-weight: 600; white-space: nowrap;
+  }
+  .badge-green { background: #c8e6c9; color: #1b5e20; }
+  .badge-red { background: #ffcdd2; color: #b71c1c; }
+
+  #results { display: none; }
+</style>
+</head>
+<body>
+
+<h1>&#x1F4CB; Invoice Matcher</h1>
+
+<div class="card">
+  <div class="upload-grid">
+    <!-- Faktury -->
+    <div class="upload-box" id="drop-invoices">
+      <div class="icon">&#x1F4C4;</div>
+      <h3>Faktury</h3>
+      <p>.xls / .xlsx</p>
+      <input type="file" id="inv-input" multiple accept=".xls,.xlsx">
+      <div class="file-list" id="inv-list"></div>
+    </div>
+    <!-- Platby -->
+    <div class="upload-box" id="drop-payments">
+      <div class="icon">&#x1F4B3;</div>
+      <h3>Platby (bankovní export)</h3>
+      <p>.xls (HTML export)</p>
+      <input type="file" id="pay-input" multiple accept=".xls,.xlsx">
+      <div class="file-list" id="pay-list"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="match-btn" disabled>
+      <span>&#x1F50D;</span>
+      <span>Spárovat</span>
+      <span class="spinner" id="spinner"></span>
+    </button>
+    <button class="btn btn-success" id="dl-btn" style="display:none">
+      &#x2B07; Stáhnout XLSX
+    </button>
+  </div>
+
+  <div class="error-box" id="err-box"></div>
+</div>
+
+<!-- Výsledky -->
+<div id="results">
+  <div class="card">
+    <div class="stats-grid" id="stats-grid"></div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-tab="inv">Faktury</div>
+      <div class="tab" data-tab="pay">Platby</div>
+    </div>
+    <div class="table-wrap">
+      <table id="inv-table" style="display:table">
+        <thead>
+          <tr>
+            <th>Číslo</th>
+            <th>Vystaveno</th>
+            <th>Odběratel</th>
+            <th>K úhradě</th>
+            <th>Stav</th>
+            <th>Přiřazená platba</th>
+            <th>Kód autorizace</th>
+          </tr>
+        </thead>
+        <tbody id="inv-body"></tbody>
+      </table>
+      <table id="pay-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Datum a čas</th>
+            <th>Částka</th>
+            <th>Kód autorizace</th>
+            <th>Stav</th>
+            <th>Přiřazená faktura</th>
+          </tr>
+        </thead>
+        <tbody id="pay-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Drag & Drop + file input helpers ─────────────────────────────────────────
+function setupDrop(boxId, inputId, listId) {
+  const box = document.getElementById(boxId);
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+
+  function renderFiles(files) {
+    list.innerHTML = [...files].map(f =>
+      `<div>&#x2705; <span class="fname">${f.name}</span></div>`
+    ).join('');
+    checkReady();
+  }
+
+  input.addEventListener('change', () => renderFiles(input.files));
+
+  box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drag-over'); });
+  box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
+  box.addEventListener('drop', e => {
+    e.preventDefault();
+    box.classList.remove('drag-over');
+    const dt = e.dataTransfer;
+    // Assign files to the input (create new FileList via DataTransfer)
+    const transfer = new DataTransfer();
+    [...dt.files].forEach(f => transfer.items.add(f));
+    input.files = transfer.files;
+    renderFiles(input.files);
+  });
+}
+
+setupDrop('drop-invoices', 'inv-input', 'inv-list');
+setupDrop('drop-payments', 'pay-input', 'pay-list');
+
+function checkReady() {
+  const invOk = document.getElementById('inv-input').files.length > 0;
+  const payOk = document.getElementById('pay-input').files.length > 0;
+  document.getElementById('match-btn').disabled = !(invOk && payOk);
+}
+
+// ── Párování ──────────────────────────────────────────────────────────────────
+document.getElementById('match-btn').addEventListener('click', async () => {
+  const invFiles = document.getElementById('inv-input').files;
+  const payFiles = document.getElementById('pay-input').files;
+
+  const btn = document.getElementById('match-btn');
+  const spinner = document.getElementById('spinner');
+  const errBox = document.getElementById('err-box');
+  const dlBtn = document.getElementById('dl-btn');
+
+  btn.disabled = true;
+  spinner.style.display = 'block';
+  errBox.style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+  dlBtn.style.display = 'none';
+
+  const fd = new FormData();
+  [...invFiles].forEach(f => fd.append('invoices', f));
+  [...payFiles].forEach(f => fd.append('payments', f));
+
+  try {
+    const resp = await fetch('/match', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(data.detail || 'Neznámá chyba');
+    }
+
+    renderResults(data);
+    dlBtn.style.display = 'inline-flex';
+  } catch (e) {
+    errBox.textContent = '&#x274C; ' + e.message;
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+});
+
+// ── Download ──────────────────────────────────────────────────────────────────
+document.getElementById('dl-btn').addEventListener('click', () => {
+  window.location.href = '/download';
+});
+
+// ── Render výsledků ───────────────────────────────────────────────────────────
+function renderResults(data) {
+  const { stats, invoices, payments } = data;
+
+  // Stats
+  const sg = document.getElementById('stats-grid');
+  sg.innerHTML = `
+    <div class="stat-card blue"><div class="num">${stats.faktury_celkem}</div><div class="label">Faktur celkem</div></div>
+    <div class="stat-card green"><div class="num">${stats.zaplaceno}</div><div class="label">Zaplaceno</div></div>
+    <div class="stat-card red"><div class="num">${stats.nezaplaceno}</div><div class="label">Nezaplaceno</div></div>
+    <div class="stat-card blue"><div class="num">${stats.platby_celkem}</div><div class="label">Plateb celkem</div></div>
+    <div class="stat-card green"><div class="num">${stats.prirazene}</div><div class="label">Přiřazených</div></div>
+    <div class="stat-card red"><div class="num">${stats.nepriraditelne}</div><div class="label">Nepřiřaditelných</div></div>
+  `;
+
+  // Faktury
+  const invBody = document.getElementById('inv-body');
+  invBody.innerHTML = invoices.map(r => {
+    const cls = r.stav === 'Zaplaceno' ? 'zaplaceno' : 'nezaplaceno';
+    const badge = r.stav === 'Zaplaceno'
+      ? '<span class="badge badge-green">Zaplaceno</span>'
+      : '<span class="badge badge-red">Nezaplaceno</span>';
+    return `<tr class="${cls}">
+      <td>${esc(r.cislo)}</td>
+      <td>${esc(r.vystaveno)}</td>
+      <td>${esc(r.odberatel)}</td>
+      <td>${esc(r.castka)}</td>
+      <td>${badge}</td>
+      <td>${esc(r.prirazena_platba)}</td>
+      <td>${esc(r.kod_autorizace)}</td>
+    </tr>`;
+  }).join('');
+
+  // Platby
+  const payBody = document.getElementById('pay-body');
+  payBody.innerHTML = payments.map(r => {
+    const cls = r.stav === 'Přiřazená' ? 'prirazena' : 'nepriraditelna';
+    const badge = r.stav === 'Přiřazená'
+      ? '<span class="badge badge-green">Přiřazená</span>'
+      : '<span class="badge badge-red">Nepřiřaditelná</span>';
+    return `<tr class="${cls}">
+      <td>${esc(r.datum)}</td>
+      <td>${esc(r.castka)}</td>
+      <td>${esc(r.kod_autorizace)}</td>
+      <td>${badge}</td>
+      <td>${esc(r.prirazena_faktura)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('results').style.display = 'block';
+}
+
+function esc(v) {
+  if (v == null) return '';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const which = tab.dataset.tab;
+    document.getElementById('inv-table').style.display = which === 'inv' ? 'table' : 'none';
+    document.getElementById('pay-table').style.display = which === 'pay' ? 'table' : 'none';
+  });
+});
+</script>
+</body>
+</html>
