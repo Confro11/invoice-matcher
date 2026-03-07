@@ -182,9 +182,11 @@
       <span>Spárovat</span>
       <span class="spinner" id="spinner"></span>
     </button>
-    <button class="btn btn-success" id="dl-btn" style="display:none">
-      &#x2B07; Stáhnout XLSX
-    </button>
+    <div id="dl-btns" style="display:none; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-success" onclick="download('both')">&#x2B07; Faktury + Platby</button>
+      <button class="btn btn-success" onclick="download('invoices')">&#x2B07; Jen Faktury</button>
+      <button class="btn btn-success" onclick="download('payments')">&#x2B07; Jen Platby</button>
+    </div>
   </div>
 
   <div class="error-box" id="err-box"></div>
@@ -279,13 +281,13 @@ document.getElementById('match-btn').addEventListener('click', async () => {
   const btn = document.getElementById('match-btn');
   const spinner = document.getElementById('spinner');
   const errBox = document.getElementById('err-box');
-  const dlBtn = document.getElementById('dl-btn');
+  const dlBtns = document.getElementById("dl-btns");
 
   btn.disabled = true;
   spinner.style.display = 'block';
   errBox.style.display = 'none';
   document.getElementById('results').style.display = 'none';
-  dlBtn.style.display = 'none';
+  dlBtns.style.display = "none";
 
   const fd = new FormData();
   [...invFiles].forEach(f => fd.append('invoices', f));
@@ -300,7 +302,7 @@ document.getElementById('match-btn').addEventListener('click', async () => {
     }
 
     renderResults(data);
-    dlBtn.style.display = 'inline-flex';
+    dlBtns.style.display = "flex";
   } catch (e) {
     errBox.textContent = '&#x274C; ' + e.message;
     errBox.style.display = 'block';
@@ -311,9 +313,9 @@ document.getElementById('match-btn').addEventListener('click', async () => {
 });
 
 // ── Download ──────────────────────────────────────────────────────────────────
-document.getElementById('dl-btn').addEventListener('click', () => {
-  window.location.href = '/download';
-});
+function download(sheet) {
+  window.location.href = '/download?sheet=' + sheet;
+}
 
 // ── Render výsledků ───────────────────────────────────────────────────────────
 function renderResults(data) {
