@@ -6,14 +6,13 @@ Párování faktur s platbami z platebního terminálu.
 import io
 import tempfile
 import os
-from datetime import timedelta
 from typing import List, Optional
 
 import pandas as pd
 import openpyxl
 from openpyxl.styles import PatternFill, Font
 from openpyxl.utils import get_column_letter
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -45,8 +44,6 @@ def load_payments(file_bytes: bytes, filename: str) -> pd.DataFrame:
 
 
 def match(inv_raw: pd.DataFrame, pay_raw: pd.DataFrame):
-    MAX_DIFF = timedelta(minutes=10)
-
     # Čištění faktur
     inv = inv_raw.dropna(subset=["Číslo"]).copy()
     inv["Vystaveno_dt"] = pd.to_datetime(inv["Vystaveno"], dayfirst=True, errors="coerce")
@@ -71,9 +68,8 @@ def match(inv_raw: pd.DataFrame, pay_raw: pd.DataFrame):
             continue
 
         castka = inv_row["Castka"]
-        dt_fakt = inv_row["Vystaveno_dt"]
+        datum_fakt = inv_row["Vystaveno_dt"].date()
 
-        candidates = []
         for j, pay_row in pay.iterrows():
             if j in used_payments:
                 continue
@@ -81,31 +77,26 @@ def match(inv_raw: pd.DataFrame, pay_raw: pd.DataFrame):
                 continue
             if abs(pay_row["Castka"] - castka) > 0.01:
                 continue
-
-            diff = dt_fakt - pay_row["Datum_dt"]
-            if timedelta(minutes=-2) <= diff <= MAX_DIFF:
-                candidates.append((j, abs(diff.total_seconds()), pay_row))
-
-        if candidates:
-            candidates.sort(key=lambda x: x[1])
-            best_j, _, best_pay = candidates[0]
+            if pay_row["Datum_dt"].date() != datum_fakt:
+                continue
 
             inv.at[i, "Stav_parovani"] = "Zaplaceno"
-            inv.at[i, "Prirazena_platba"] = str(best_pay.get("Datum a hodina transakce", ""))
+            inv.at[i, "Prirazena_platba"] = str(pay_row.get("Datum a hodina transakce", ""))
             inv.at[i, "Kód autorizace"] = (
-                str(int(best_pay["Kód autorizace"]))
-                if pd.notna(best_pay.get("Kód autorizace"))
+                str(int(pay_row["Kód autorizace"]))
+                if pd.notna(pay_row.get("Kód autorizace"))
                 else ""
             )
 
-            pay.at[best_j, "Stav_parovani"] = "Přiřazená"
-            pay.at[best_j, "Prirazena_faktura"] = inv_row["Číslo"]
-            used_payments.add(best_j)
+            pay.at[j, "Stav_parovani"] = "Přiřazená"
+            pay.at[j, "Prirazena_faktura"] = inv_row["Číslo"]
+            used_payments.add(j)
+            break
 
     return inv, pay
 
 
-def build_excel(inv: pd.DataFrame, pay: pd.DataFrame) -> bytes:
+def build_excel(inv: pd.DataFrame, pay: pd.DataFrame, sheet: str = "both") -> bytes:
     GREEN = PatternFill("solid", fgColor="C6EFCE")
     RED = PatternFill("solid", fgColor="FFC7CE")
     YELLOW = PatternFill("solid", fgColor="FFEB9C")
@@ -128,26 +119,56 @@ def build_excel(inv: pd.DataFrame, pay: pd.DataFrame) -> bytes:
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 2, 40)
 
     wb = openpyxl.Workbook()
-    ws_inv = wb.active
-    ws_inv.title = "Faktury"
+    first_sheet = True
 
-    inv_out = inv[
-        ["Číslo", "Vystaveno", "Odběratel", "Celkem k úhradě", "Celkem s DPH",
-         "Měna", "Stav_parovani", "Prirazena_platba", "Kód autorizace"]
-    ].copy()
-    inv_out.columns = [
-        "Číslo faktury", "Vystaveno", "Odběratel", "K úhradě", "Celkem s DPH",
-        "Měna", "Stav", "Přiřazená platba", "Kód autorizace"
-    ]
-    write_sheet(ws_inv, inv_out, "Stav", {"Zaplaceno": GREEN, "Nezaplaceno": RED})
+    if sheet in ("invoices", "both"):
+        ws_inv = wb.active if first_sheet else wb.create_sheet("Faktury")
+        ws_inv.title = "Faktury"
+        first_sheet = False
 
-    ws_pay = wb.create_sheet("Platby")
-    pay_out = pay[
-        ["Datum a hodina transakce", "Částka transakce brutto", "Kód autorizace",
-         "Stav_parovani", "Prirazena_faktura"]
-    ].copy()
-    pay_out.columns = ["Datum a čas", "Částka", "Kód autorizace", "Stav", "Přiřazená faktura"]
-    write_sheet(ws_pay, pay_out, "Stav", {"Přiřazená": GREEN, "Nepřiřaditelná": RED})
+        inv_out = inv[
+            ["Číslo", "Vystaveno", "Odběratel", "Celkem k úhradě", "Celkem s DPH",
+             "Měna", "Stav_parovani", "Prirazena_platba", "Kód autorizace"]
+        ].copy()
+        inv_out.columns = [
+            "Číslo faktury", "Vystaveno", "Odběratel", "K úhradě", "Celkem s DPH",
+            "Měna", "Stav", "Přiřazená platba", "Kód autorizace"
+        ]
+        write_sheet(ws_inv, inv_out, "Stav", {"Zaplaceno": GREEN, "Nezaplaceno": RED})
+
+    if sheet in ("payments", "both"):
+        # Sestavení lookup tabulky faktur: číslo → (odběratel, částka)
+        inv_lookup = {}
+        for _, row in inv.iterrows():
+            cislo = str(row["Číslo"])
+            inv_lookup[cislo] = {
+                "odberatel": str(row.get("Odběratel", "")) if pd.notna(row.get("Odběratel")) else "",
+                "castka": row.get("Celkem k úhradě", ""),
+            }
+
+        # Sestavení výstupu plateb s obohacenými sloupci
+        rows = []
+        for _, row in pay.iterrows():
+            cislo_fakt = str(row.get("Prirazena_faktura", ""))
+            info = inv_lookup.get(cislo_fakt, {"odberatel": "", "castka": ""})
+            rows.append({
+                "Datum a čas": row.get("Datum a hodina transakce", ""),
+                "Částka": row.get("Částka transakce brutto", ""),
+                "Kód autorizace": (
+                    str(int(row["Kód autorizace"]))
+                    if pd.notna(row.get("Kód autorizace"))
+                    else ""
+                ),
+                "Stav": row.get("Stav_parovani", ""),
+                "Číslo faktury": cislo_fakt if cislo_fakt else "",
+                "Odběratel": info["odberatel"],
+                "Částka faktury": info["castka"] if cislo_fakt else "",
+            })
+        pay_out = pd.DataFrame(rows)
+
+        ws_pay = wb.active if first_sheet else wb.create_sheet("Platby")
+        ws_pay.title = "Platby"
+        write_sheet(ws_pay, pay_out, "Stav", {"Přiřazená": GREEN, "Nepřiřaditelná": RED})
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -156,8 +177,9 @@ def build_excel(inv: pd.DataFrame, pay: pd.DataFrame) -> bytes:
 
 # ── Endpoint: párování ────────────────────────────────────────────────────────
 
-# Temporary storage for the last generated xlsx
-_last_xlsx: Optional[bytes] = None
+# Temporary storage for the last matched results
+_last_inv: Optional[pd.DataFrame] = None
+_last_pay: Optional[pd.DataFrame] = None
 
 
 @app.post("/match")
@@ -165,7 +187,7 @@ async def match_files(
     invoices: List[UploadFile] = File(...),
     payments: List[UploadFile] = File(...),
 ):
-    global _last_xlsx
+    global _last_inv, _last_pay
 
     # Načtení a sloučení všech faktur
     inv_frames = []
@@ -195,6 +217,9 @@ async def match_files(
         inv_result, pay_result = match(inv_all, pay_all)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chyba při párování: {e}")
+
+    _last_inv = inv_result
+    _last_pay = pay_result
 
     # Sestavení JSON odpovědi
     def safe(val):
@@ -234,9 +259,6 @@ async def match_files(
         "nepriraditelne": int((pay_result["Stav_parovani"] == "Nepřiřaditelná").sum()),
     }
 
-    # Uložení xlsx do paměti
-    _last_xlsx = build_excel(inv_result, pay_result)
-
     return JSONResponse({
         "stats": stats,
         "invoices": invoices_out,
@@ -245,18 +267,25 @@ async def match_files(
 
 
 @app.get("/download")
-async def download_xlsx():
-    global _last_xlsx
-    if _last_xlsx is None:
+async def download_xlsx(
+    sheet: str = Query(default="both", pattern="^(invoices|payments|both)$")
+):
+    global _last_inv, _last_pay
+    if _last_inv is None or _last_pay is None:
         raise HTTPException(status_code=404, detail="Nejprve proveďte párování.")
 
+    xlsx_bytes = build_excel(_last_inv, _last_pay, sheet=sheet)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        tmp.write(_last_xlsx)
+        tmp.write(xlsx_bytes)
         tmp_path = tmp.name
+
+    name_map = {"invoices": "faktury", "payments": "platby", "both": "parovani_faktur"}
+    filename = f"{name_map[sheet]}.xlsx"
 
     return FileResponse(
         tmp_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="parovani_faktur.xlsx",
+        filename=filename,
         background=BackgroundTask(os.unlink, tmp_path),
     )
