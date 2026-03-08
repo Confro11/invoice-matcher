@@ -1,12 +1,16 @@
 """
 Invoice Matcher - Launcher
-Spustí server a otevře prohlížeč. Entry point pro PyInstaller .exe
+Entry point pro PyInstaller .exe
 """
 import sys
 import os
+import multiprocessing
 import threading
 import time
 import webbrowser
+
+# Nutné pro PyInstaller na Windows
+multiprocessing.freeze_support()
 
 # PyInstaller path fix
 if getattr(sys, "frozen", False):
@@ -28,12 +32,12 @@ def open_browser():
 if __name__ == "__main__":
     try:
         import uvicorn
-        print(f"Spouštím Invoice Matcher na {URL} ...")
-        print(f"BASE_DIR: {BASE_DIR}")
+        from main import app  # přímý import místo stringu — funguje v .exe
+
+        print(f"Invoice Matcher běží na {URL}")
         threading.Thread(target=open_browser, daemon=True).start()
-        uvicorn.run("main:app", host="127.0.0.1", port=PORT, log_level="info")
-    except Exception as e:
+        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
+    except Exception:
         import traceback
-        print("CHYBA PRI SPUSTENI:")
         traceback.print_exc()
-        input("Stiskni Enter pro zavření...")
+        input("\nStiskni Enter pro zavření...")

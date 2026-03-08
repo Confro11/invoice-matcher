@@ -1,28 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
 
 block_cipher = None
+
+# Sbíráme vše co uvicorn potřebuje
+uvicorn_datas, uvicorn_binaries, uvicorn_hiddenimports = collect_all('uvicorn')
+calamine_datas, calamine_binaries, calamine_hiddenimports = collect_all('python_calamine')
 
 a = Analysis(
     ['launcher.py'],
     pathex=[],
-    binaries=[],
+    binaries=uvicorn_binaries + calamine_binaries,
     datas=[
         ('static', 'static'),
+        *uvicorn_datas,
+        *calamine_datas,
     ],
     hiddenimports=[
-        'uvicorn.logging',
-        'uvicorn.loops',
-        'uvicorn.loops.auto',
-        'uvicorn.protocols',
-        'uvicorn.protocols.http',
-        'uvicorn.protocols.http.auto',
-        'uvicorn.protocols.http.h11_impl',
-        'uvicorn.protocols.websockets',
-        'uvicorn.protocols.websockets.auto',
-        'uvicorn.lifespan',
-        'uvicorn.lifespan.on',
-        'uvicorn.main',
-        'uvicorn.config',
+        *uvicorn_hiddenimports,
+        *calamine_hiddenimports,
         'anyio',
         'anyio._backends._asyncio',
         'anyio._backends._trio',
@@ -30,7 +27,6 @@ a = Analysis(
         'starlette.staticfiles',
         'starlette.responses',
         'fastapi',
-        'python_calamine',
         'lxml',
         'lxml.etree',
         'lxml._elementpath',
@@ -39,13 +35,11 @@ a = Analysis(
         'h11',
         'click',
         'multipart',
+        'python_multipart',
     ],
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
@@ -61,16 +55,12 @@ exe = EXE(
     [],
     name='InvoiceMatcher',
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,   # Zobrazí chyby při spuštění
-    disable_windowed_traceback=False,
+    console=True,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
     icon=None,
 )
