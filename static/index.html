@@ -265,10 +265,16 @@ function setupDrop(boxId, inputId, listId) {
     syncToInput(merged);
   });
 
+  // Vizuální feedback na boxu
   box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drag-over'); });
   box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
-  box.addEventListener('drop', e => {
-    e.preventDefault();
+
+  // Drop zachytáváme na INPUTU (ne boxu) - input zakrývá celou plochu
+  // e.preventDefault() zabrání nativnímu přepsání input.files
+  input.addEventListener('dragover', e => e.preventDefault());
+  input.addEventListener('dragleave', () => box.classList.remove('drag-over'));
+  input.addEventListener('drop', e => {
+    e.preventDefault(); // zabrání nativnímu chování (přepsání souborů)
     box.classList.remove('drag-over');
     const merged = [...allFiles];
     [...e.dataTransfer.files].forEach(f => {
