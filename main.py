@@ -6,6 +6,7 @@ Párování faktur s platbami z platebního terminálu.
 import io
 import tempfile
 import os
+import sys
 from typing import List, Optional
 
 import pandas as pd
@@ -19,13 +20,19 @@ from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Invoice Matcher")
 
-# ── Statické soubory ──────────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# ── Cesta ke statickým souborům (funguje i v PyInstaller .exe) ────────────────
+BASE_DIR = os.environ.get(
+    "INVOICE_MATCHER_BASE_DIR",
+    getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+)
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 async def root():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 # ── Pomocné funkce ────────────────────────────────────────────────────────────
