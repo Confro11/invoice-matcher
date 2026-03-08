@@ -90,7 +90,7 @@ def match(inv_raw: pd.DataFrame, pay_raw: pd.DataFrame):
             inv.at[i, "Stav_parovani"] = "Zaplaceno"
             inv.at[i, "Prirazena_platba"] = str(pay_row.get("Datum a hodina transakce", ""))
             inv.at[i, "Kód autorizace"] = (
-                str(int(pay_row["Kód autorizace"]))
+                str(pay_row["Kód autorizace"]).strip()
                 if pd.notna(pay_row.get("Kód autorizace"))
                 else ""
             )
@@ -162,7 +162,7 @@ def build_excel(inv: pd.DataFrame, pay: pd.DataFrame, sheet: str = "both") -> by
                 "Datum a čas": row.get("Datum a hodina transakce", ""),
                 "Částka": row.get("Částka transakce brutto", ""),
                 "Kód autorizace": (
-                    str(int(row["Kód autorizace"]))
+                    str(row["Kód autorizace"]).strip()
                     if pd.notna(row.get("Kód autorizace"))
                     else ""
                 ),
@@ -251,7 +251,7 @@ async def match_files(
         payments_out.append({
             "datum": safe(row.get("Datum a hodina transakce", "")),
             "castka": safe(row.get("Částka transakce brutto", "")),
-            "kod_autorizace": (str(int(v)) if isinstance(v, float) and not pd.isna(v) else str(v) if pd.notna(v) else "") if (v := row.get("Kód autorizace", "")) != "" else "",
+            "kod_autorizace": str(v).strip() if pd.notna(v := row.get("Kód autorizace", "")) and str(v).strip() != "" else "",
             "stav": safe(row.get("Stav_parovani", "")),
             "prirazena_faktura": safe(row.get("Prirazena_faktura", "")),
         })
