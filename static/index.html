@@ -240,6 +240,15 @@ function setupDrop(boxId, inputId, listId) {
   const box = document.getElementById(boxId);
   const input = document.getElementById(inputId);
   const list = document.getElementById(listId);
+  let allFiles = [];
+
+  function syncToInput(files) {
+    allFiles = files;
+    const transfer = new DataTransfer();
+    files.forEach(f => transfer.items.add(f));
+    input.files = transfer.files;
+    renderFiles(input.files);
+  }
 
   function renderFiles(files) {
     list.innerHTML = [...files].map(f =>
@@ -248,24 +257,24 @@ function setupDrop(boxId, inputId, listId) {
     checkReady();
   }
 
-  input.addEventListener('change', () => renderFiles(input.files));
+  input.addEventListener('change', () => {
+    const merged = [...allFiles];
+    [...input.files].forEach(f => {
+      if (!merged.some(ex => ex.name === f.name)) merged.push(f);
+    });
+    syncToInput(merged);
+  });
 
   box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drag-over'); });
   box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
   box.addEventListener('drop', e => {
     e.preventDefault();
     box.classList.remove('drag-over');
-    const dt = e.dataTransfer;
-    // Merge existing files with newly dropped files (avoid duplicates by name)
-    const transfer = new DataTransfer();
-    [...input.files].forEach(f => transfer.items.add(f));
-    [...dt.files].forEach(f => {
-      if (![...input.files].some(ex => ex.name === f.name)) {
-        transfer.items.add(f);
-      }
+    const merged = [...allFiles];
+    [...e.dataTransfer.files].forEach(f => {
+      if (!merged.some(ex => ex.name === f.name)) merged.push(f);
     });
-    input.files = transfer.files;
-    renderFiles(input.files);
+    syncToInput(merged);
   });
 }
 
