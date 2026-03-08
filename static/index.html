@@ -256,9 +256,14 @@ function setupDrop(boxId, inputId, listId) {
     e.preventDefault();
     box.classList.remove('drag-over');
     const dt = e.dataTransfer;
-    // Assign files to the input (create new FileList via DataTransfer)
+    // Merge existing files with newly dropped files (avoid duplicates by name)
     const transfer = new DataTransfer();
-    [...dt.files].forEach(f => transfer.items.add(f));
+    [...input.files].forEach(f => transfer.items.add(f));
+    [...dt.files].forEach(f => {
+      if (![...input.files].some(ex => ex.name === f.name)) {
+        transfer.items.add(f);
+      }
+    });
     input.files = transfer.files;
     renderFiles(input.files);
   });
