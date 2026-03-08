@@ -240,47 +240,37 @@ function setupDrop(boxId, inputId, listId) {
   const box = document.getElementById(boxId);
   const input = document.getElementById(inputId);
   const list = document.getElementById(listId);
-  let allFiles = [];
+  input._files = [];
 
-  function syncToInput(files) {
-    allFiles = files;
-    const transfer = new DataTransfer();
-    files.forEach(f => transfer.items.add(f));
-    input.files = transfer.files;
-    renderFiles(input.files);
-  }
-
-  function renderFiles(files) {
-    list.innerHTML = [...files].map(f =>
-      `<div>&#x2705; <span class="fname">${f.name}</span></div>`
-    ).join('');
+  function addFiles(newFiles) {
+    [...newFiles].forEach(f => {
+      if (!input._files.some(ex => ex.name === f.name)) {
+        input._files.push(f);
+      }
+    });
+    renderFileList();
     checkReady();
   }
 
+  function renderFileList() {
+    list.innerHTML = input._files.map(f =>
+      `<div>&#x2705; <span class="fname">${f.name}</span></div>`
+    ).join('');
+  }
+
   input.addEventListener('change', () => {
-    const merged = [...allFiles];
-    [...input.files].forEach(f => {
-      if (!merged.some(ex => ex.name === f.name)) merged.push(f);
-    });
-    syncToInput(merged);
+    addFiles(input.files);
   });
 
-  // Vizuální feedback na boxu
   box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drag-over'); });
   box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
 
-  // Drop zachytáváme na INPUTU (ne boxu) - input zakrývá celou plochu
-  // e.preventDefault() zabrání nativnímu přepsání input.files
   input.addEventListener('dragover', e => e.preventDefault());
   input.addEventListener('dragleave', () => box.classList.remove('drag-over'));
   input.addEventListener('drop', e => {
-    e.preventDefault(); // zabrání nativnímu chování (přepsání souborů)
+    e.preventDefault();
     box.classList.remove('drag-over');
-    const merged = [...allFiles];
-    [...e.dataTransfer.files].forEach(f => {
-      if (!merged.some(ex => ex.name === f.name)) merged.push(f);
-    });
-    syncToInput(merged);
+    addFiles(e.dataTransfer.files);
   });
 }
 
@@ -288,15 +278,15 @@ setupDrop('drop-invoices', 'inv-input', 'inv-list');
 setupDrop('drop-payments', 'pay-input', 'pay-list');
 
 function checkReady() {
-  const invOk = document.getElementById('inv-input').files.length > 0;
-  const payOk = document.getElementById('pay-input').files.length > 0;
+  const invOk = (document.getElementById('inv-input')._files || []).length > 0;
+  const payOk = (document.getElementById('pay-input')._files || []).length > 0;
   document.getElementById('match-btn').disabled = !(invOk && payOk);
 }
 
 // ── Párování ──────────────────────────────────────────────────────────────────
 document.getElementById('match-btn').addEventListener('click', async () => {
-  const invFiles = document.getElementById('inv-input').files;
-  const payFiles = document.getElementById('pay-input').files;
+  const invFiles = document.getElementById('inv-input')._files || [];
+  const payFiles = document.getElementById('pay-input')._files || [];
 
   const btn = document.getElementById('match-btn');
   const spinner = document.getElementById('spinner');
